@@ -1,0 +1,7 @@
+@@ Commands object captures MUSH $commands and relays them to pybot
+
+@@ @create Pybot Commands (pyc)
+@set pyc=WIZARD
+@set pyc=!NO_COMMAND
+
+&CMD.TEST pyc=$+py *:@pemit *pybot=[get(*pybot/PYBOT_CODE)]:%0
