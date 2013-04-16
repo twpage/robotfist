@@ -4,4 +4,14 @@
 @set pyc=WIZARD
 @set pyc=!NO_COMMAND
 
-&CMD.TEST pyc=$+py *:@pemit *pybot=[get(*pybot/PYBOT_CODE)]:%0
+&CMD.TEST pyc=$+py *:@pemit *pybot=[get(*pybot/PYBOT_CODE)]:%#:%l:%0
+
+&CMD.INTERFACE pyc=$!*:@assert [hasflag(*pybot, CONNECTED)]=@pemit %#=ERROR: RobotFist client is not connected. ;; @pemit *pybot=[get(*pybot/PYBOT_CODE)]:%#:%l:%0
+
+
+&FN_HEADER pyc=[center([switch(%0,,,\[ [ansi(hw,%0)] \])],78,=)]
+&FN_SUBHEADER pyc=[repeat(-,5)][switch(%0,,,\( [ansi(h,%0)] \))][repeat(-,sub(73,if(%0,add(strlen(%0),4),0)))]
+&FN_FILEHEADER pyc=[repeat(%b,6)][repeat(_,add(strlen(%0),2))]%r[repeat(_,5)][ljust(/ %0 \\, 73, _)]
+
+@startup pyc=[@@(turn any FN_ attributes into GLOBAL MUSH functions)] ;; @dol lattr(%!/FN_*)=@function [after(##,FN_)]=%!/##
+

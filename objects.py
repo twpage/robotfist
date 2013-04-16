@@ -6,13 +6,25 @@ Todd Page
 from collections import OrderedDict
 import copy, re
 
+
+from errors import InvalidStatError
+
 class Stat:
+    """
+    Base class for a Stat
+    """
+    def get(self):
+        raise NotImplementedError("Stat does not have get() defined")
+    
+    def set(self):
+        raise NotImplementedError("Stat does not have set() defined")
+    
+class IntegerStat:
     """
     Individual combat stat (health, power, etc)
     Keeps track of a single number with bounds
     """
-    def __init__(self, name, max_value, init_value=None, AllowBelowZero=False, AllowAboveMax=False):
-        self.name = name
+    def __init__(self, max_value, init_value=None, AllowBelowZero=False, AllowAboveMax=False):
         self.max_value = max_value
         self.value = init_value if init_value else max_value
         self.AllowBelowZero = AllowBelowZero
@@ -28,6 +40,14 @@ class Stat:
         self.value = self.max_value
         return True
     
+    def set(self, new_value):
+        self.value = new_value
+        self.max_value = new_value
+        
+    def set_str(self, str_new_value):
+        new_value = int(str_new_value)
+        self.set(new_value)
+        
     def __add__(self, number):
         self.value += number
         return self.checkBounds()
@@ -54,6 +74,63 @@ class Stat:
     def isMax(self):
         return self.value == self.max_value
     
+class StringStat:
+    def __init__(self, validate_fn, value):
+        self.validate_fn = validate_fn
+        if not validate_fn(value):
+            raise InvalidStatError(str.format("initial value {0} does not match validation function", value))
+        self.value = value
+        
+    def get(self):
+        return self.value
+    
+    def set(self, new_value):
+        if not self.validate_fn(new_value):
+            return False
+        else:
+            self.value = new_value
+            return True
+
+    def set_str(self, str_new_value):
+        self.set(str_new_value.upper())
+
+class ListStat:
+    def __init__(self, validate_fn):
+        self.validate_fn = validate_fn
+        self.value = set([])
+        
+    def add(self, new_value):
+        if self.validate_fn(new_value):
+            self.value.add(new_value)
+            return True
+        else:
+            raise InvalidStatError(str.format("value {0} does not match validation function", new_value))
+        
+    def remove(self, existing_value):
+        if self.validate_fn(existing_value):
+            self.value.remove(existing_value)
+            return True
+        else:
+            raise InvalidStatError(str.format("value {0} does not match validation function", new_value))
+        
+    def reset(self):
+        self.value = set([])
+        
+    def get(self):
+        return self.value
+    
+    def set(self, new_value_lst):
+        result_lst = [self.add(v) for v in new_value_lst]
+        if not all(result_lst):
+            raise InvalidStatError(str.format("At least one value in {0} does not match validation function", new_value_lst))
+        else:
+            return True
+        
+    def set_str(self, str_new_value):
+        new_value_lst = [s.upper() for s in str_new_value.split(" ")]
+        self.set(new_value_lst)
+
+
 class ThingWithStats:
     """
     Schemas, modes, and attacks all have stats
@@ -61,12 +138,12 @@ class ThingWithStats:
     def __init__(self):
         self.stats_dct = {}
         
-    def addStat(self, stat_name, value):
+    def addStat(self, stat_name, stat):
         if stat_name in self.stats_dct:
             return False
         else:
-            self.stats_dct[stat_name] = Stat(stat_name, value)
-            self.stats_dct[stat_name].reset()
+            self.stats_dct[stat_name] = stat
+            stat.name = stat_name ## do this so we dont have to pass in the name twice
             return True
     
     def getStats(self):
@@ -74,6 +151,12 @@ class ThingWithStats:
     
     def getStat(self, stat_name):
         return self.stats_dct.get(stat_name, None)
+    
+    def get(self, stat_name):
+        return self.getStat(stat_name).get()
+        
+    def has(self, stat_name):
+        return stat_name in self.stats_dct
     
 class Combatant:
     """
@@ -122,6 +205,12 @@ class Combatant:
             text += schema.display()
         
         return text
+    
+    def base(self):
+        return self.getSchema("BASE")
+    
+    def current(self):
+        return self.getSchema("CURRENT")
 
 class Schema(ThingWithStats):
     """
@@ -131,6 +220,7 @@ class Schema(ThingWithStats):
         ThingWithStats.__init__(self)
         self.parent = parent
         self.name = name
+        self.mode = 0
         
         self.flags_lst = []
         self.modes_lst = []
@@ -149,6 +239,13 @@ class Schema(ThingWithStats):
         else:
             return self.modes_lst[mode_num]
         
+    def getCurrentMode(self):
+        return self.modes_lst[self.mode]
+    
+    def setMode(self, new_mode_no):
+        self.mode = new_mode_no
+        return True
+    
     def toMUSH(self):
         """
         re-create this object in MUSHcode
@@ -264,79 +361,79 @@ class Attack(ThingWithStats):
     
         return text
         
-def loadCombatantFromMUSH(pybot, dbref):
-    combatant = Combatant(dbref)
-    attrib_lst = pybot.getFromMUSH(str.format("th [lattr({0}/XSTATS`**)]", dbref)).split(" ")
-    value_lst = pybot.getFromMUSH(str.format("th [map(#lambda/get({0}/\%0), lattr({0}/XSTATS`**),,|)]", dbref)).split("|")
+#def loadCombatantFromMUSH(pybot, dbref):
+    #combatant = Combatant(dbref)
+    #attrib_lst = pybot.getFromMUSH(str.format("th [lattr({0}/XSTATS`**)]", dbref)).split(" ")
+    #value_lst = pybot.getFromMUSH(str.format("th [map(#lambda/get({0}/\%0), lattr({0}/XSTATS`**),,|)]", dbref)).split("|")
 
-    mushdata_dct = dict(zip(attrib_lst, value_lst))
+    #mushdata_dct = dict(zip(attrib_lst, value_lst))
     
-    ## set up schemas
-    for attrib, value in mushdata_dct.items():
-        component_lst = attrib.split("`")
-        if len(component_lst) == 2:
-            schema_name = component_lst[1]
-            combatant.addSchema(schema_name)
-            del mushdata_dct[attrib]
+    ### set up schemas
+    #for attrib, value in mushdata_dct.items():
+        #component_lst = attrib.split("`")
+        #if len(component_lst) == 2:
+            #schema_name = component_lst[1]
+            #combatant.addSchema(schema_name)
+            #del mushdata_dct[attrib]
             
-    ## setup modes
-    modes_rx = re.compile("XSTATS`(.*)`MODE_(\d+)`NAME")
-    for attrib, value in mushdata_dct.items():
-        match = modes_rx.search(attrib)
-        if match:
-            schema_name, mode_num = match.groups()
-            mode_name = value
-            mode = combatant.getSchema(schema_name).addMode(mode_name)
-            mode._number = int(mode_num)
-            del mushdata_dct[attrib]
+    ### setup modes
+    #modes_rx = re.compile("XSTATS`(.*)`MODE_(\d+)`NAME")
+    #for attrib, value in mushdata_dct.items():
+        #match = modes_rx.search(attrib)
+        #if match:
+            #schema_name, mode_num = match.groups()
+            #mode_name = value
+            #mode = combatant.getSchema(schema_name).addMode(mode_name)
+            #mode._number = int(mode_num)
+            #del mushdata_dct[attrib]
                 
-    ## order modes
-    for schema in combatant.getSchemas():
-        schema.modes_lst.sort(key=lambda m: m._number)
+    ### order modes
+    #for schema in combatant.getSchemas():
+        #schema.modes_lst.sort(key=lambda m: m._number)
     
-    ## setup attacks
-    attacks_rx = re.compile("XSTATS`(.*)`MODE_(\d+)`ATTACK_(\d+)`NAME")
-    for attrib, value in mushdata_dct.items():
-        match = modes_rx.search(attrib)
-        if match:
-            schema_name, mode_num, attack_num = match.groups()
-            attack_name = value
-            attack = combatant.getSchema(schema_name).getMode(int(mode_num)).addAttack(attack_name)
-            attack._number = int(attack_num)
-            del mushdata_dct[attrib]
+    ### setup attacks
+    #attacks_rx = re.compile("XSTATS`(.*)`MODE_(\d+)`ATTACK_(\d+)`NAME")
+    #for attrib, value in mushdata_dct.items():
+        #match = modes_rx.search(attrib)
+        #if match:
+            #schema_name, mode_num, attack_num = match.groups()
+            #attack_name = value
+            #attack = combatant.getSchema(schema_name).getMode(int(mode_num)).addAttack(attack_name)
+            #attack._number = int(attack_num)
+            #del mushdata_dct[attrib]
                     
-    ## order attacks
-    for schema in combatant.getSchemas():
-        for mode in schema.getModes():
-            mode.attacks_lst.sort(key=lambda a: a._number)
+    ### order attacks
+    #for schema in combatant.getSchemas():
+        #for mode in schema.getModes():
+            #mode.attacks_lst.sort(key=lambda a: a._number)
         
-    ## setup stats
-    for attrib, value in mushdata_dct.items():
-        component_lst = attrib.split("`")
-        if len(component_lst) == 3:
-            if component_lst[2].startswith("MODE"):
-                continue
-            else:
-                xstats, schema_name, stat_name = component_lst
-                combatant.getSchema(schema_name).addStat(stat_name, int(value))
-                del mushdata_dct[attrib]
+    ### setup stats
+    #for attrib, value in mushdata_dct.items():
+        #component_lst = attrib.split("`")
+        #if len(component_lst) == 3:
+            #if component_lst[2].startswith("MODE"):
+                #continue
+            #else:
+                #xstats, schema_name, stat_name = component_lst
+                #combatant.getSchema(schema_name).addStat(stat_name, int(value))
+                #del mushdata_dct[attrib]
                 
-        elif len(component_lst) == 4:
-            if component_lst[3].startswith("ATTACK"):
-                continue
-            else:
-                xstats, schema_name, mode_str, stat_name = component_lst
-                mode_num = int(mode_str.split("_")[1])
-                combatant.getSchema(schema_name).getMode(mode_num).addStat(stat_name, int(value))
-                del mushdata_dct[attrib]
+        #elif len(component_lst) == 4:
+            #if component_lst[3].startswith("ATTACK"):
+                #continue
+            #else:
+                #xstats, schema_name, mode_str, stat_name = component_lst
+                #mode_num = int(mode_str.split("_")[1])
+                #combatant.getSchema(schema_name).getMode(mode_num).addStat(stat_name, int(value))
+                #del mushdata_dct[attrib]
                 
-        elif len(component_lst) == 5:
-            xstats, schema_name, mode_str, attack_str, stat_name = component_lst
-            mode_num = int(mode_str.split("_")[1])
-            attack_num = int(attack_str.split("_")[1])
-            combatant.getSchema(schema_name).getMode(mode_num).getAttack(attack_num).addStat(stat_name, int(value))
-            del mushdata_dct[attrib]
+        #elif len(component_lst) == 5:
+            #xstats, schema_name, mode_str, attack_str, stat_name = component_lst
+            #mode_num = int(mode_str.split("_")[1])
+            #attack_num = int(attack_str.split("_")[1])
+            #combatant.getSchema(schema_name).getMode(mode_num).getAttack(attack_num).addStat(stat_name, int(value))
+            #del mushdata_dct[attrib]
                 
-    return combatant
+    #return combatant
         
 
