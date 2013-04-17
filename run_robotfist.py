@@ -101,74 +101,50 @@ class Pybot:
             if match:
                 secret_code, enactor, from_loc, input_str = match.groups()
                 
-                if input_str.find("/") != -1:
-                    ## slash, break out module and command
-                    module_name, cmd_text = input_str.split("/")                    
-                else:
-                    ## no slash, assume default 'cmd' module
-                    module_name = "cmd"
-                    cmd_text = input_str
+                #if input_str.find("/") != -1:
+                    ### slash, break out module and command
+                    #module_name, cmd_text = input_str.split("/")                    
+                #else:
+                    ### no slash, assume default 'cmd' module
+                    #module_name = "cmd"
+                    #cmd_text = input_str
                     
-                input_lst = cmd_text.split(" ")
-                cmd_name = input_lst[0]
-                args_lst = input_lst[1:]
+                #input_lst = cmd_text.split(" ")
+                #cmd_name = input_lst[0]
+                #args_lst = input_lst[1:]
                     
                 ## double check code
                 if secret_code != self.secret_code:
                     self.echo("Warning -- Received wrong secret code!")
                     return
                 
-                self.processCommand(module_name, cmd_name, enactor, from_loc, *args_lst)
+                self.processCommand(enactor, from_loc, input_str)
                 last_command_t = time.time()                
 
     def echo(self, text):
         print str.format("->{0}", text)
         
-    def processCommand(self, module_name, fn_name, enactor, from_loc, *args):
-        self.echo(str.format("got command {0}.{1}", module_name, fn_name))
-
-        if module_name == "rescan":
-            self.scanModules()
-            
-        elif module_name in self.plugin_dct:
-            module = self.plugin_dct[module_name]
-            if hasattr(module, fn_name):
-                if fn_name.startswith("_"):
-                    ## no calling internal functions
-                    err_msg = str.format("RF: Illegal call to internal function {1} for module {0}", module_name, fn_name)
-                    self.echo(err_msg)
-                    self.pemit(enactor, err_msg)
-                    
-                else:
-                    try:
-                        fn = getattr(module, fn_name)
-                        result = fn(self, enactor, from_loc, *args)
-                        ## success
-                        
-                    #except TypeError as e:
-                        #self.echo(e)
-                        #self.pemit(enactor, str.format("RF: Arguments error (probably too few) calling {0}/{1}", module_name, fn_name))
-                    #except IndexError as e:
-                        #self.echo(e)
-                        #self.pemit(enactor, str.format("RF: Arguments error (probably too few) calling {0}/{1}", module_name, fn_name))
-
-                    except Exception as ex:
-                        exc_type, exc_obj, exc_tb = sys.exc_info()
-                        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                        err_msg = str.format("RF: Code error in {0}.{1}: '{2}'", module_name, fn_name, str(ex))
-                        err_msg += str.format(" {0} {1}:{2}", str(exc_type).split(".")[1][:-2], fname, exc_tb.tb_lineno)
-                        self.echo(err_msg)
-                        self.pemit(enactor, err_msg)
-                
-            else:
-                err_msg = str.format("RF: Invalid function {1} for module {0}", module_name, fn_name)
-                self.echo(err_msg)
-                self.pemit(enactor, err_msg)                
-            
+    def processCommand(self, enactor, from_loc, input_str):
+        self.echo(str.format("got input {0}", input_str))
+        
+        dispatcher = self.plugin_dct["dispatcher"]
+        result = dispatcher.processInput(self, enactor, from_loc, input_str)
+        
+        if not result:
+            self.pemit(enactor, "Hrmm... nope.")
         else:
-            err_msg = str.format("RF: Invalid module {0}", module_name)
-            self.echo(err_msg)
-            self.pemit(enactor, err_msg)            
+            fn = result["function"]
+            args = result["args"]
+            
+            try:
+                fn(self, enactor, from_loc, *args)
+            except Exception as ex:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                err_msg = str.format("RF: Code error in {0}.{1}: '{2}'", fn.__module__, fn.func_name, str(ex))
+                err_msg += str.format(" {0} {1}:{2}", str(exc_type).split(".")[1][:-2], fname, exc_tb.tb_lineno)
+                self.echo(err_msg)
+                self.pemit(enactor, err_msg)
             
     def getFromMUSH(self, mush_text):
         """

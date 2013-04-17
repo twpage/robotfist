@@ -1,10 +1,12 @@
 """
 Todd Page
-4/15/2013
+4/16/2013
 
-Handle MUSH interface to combat/char system
+large-form display commands
 """
 
+## standard libraries
+## custom libraries
 from char import CATALOG_MODE_STAT
 
 def profile(pybot, enactor_dbref, from_loc_dbref, target_dbref=None):
